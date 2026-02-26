@@ -30,7 +30,6 @@ pub enum CswitchError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[cfg(feature = "oauth")]
     #[error("OAuth error: {0}")]
     OAuth(String),
 }

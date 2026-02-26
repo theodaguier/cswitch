@@ -1,7 +1,4 @@
-#![cfg(feature = "oauth")]
-
 // OAuth 2.0 + PKCE flow for Claude authentication.
-// This module is only compiled when the `oauth` feature is enabled.
 
 use crate::error::{CswitchError, Result};
 use crate::keychain;
@@ -40,7 +37,7 @@ pub fn run_oauth_flow(profile_name: &str) -> Result<()> {
     );
 
     println!("Opening browser for authentication...");
-    if open::open(&auth_url).is_err() {
+    if open::that(&auth_url).is_err() {
         println!("Please open this URL in your browser:\n{auth_url}");
     }
 

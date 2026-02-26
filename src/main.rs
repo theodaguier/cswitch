@@ -3,7 +3,6 @@ mod claude_config;
 mod commands;
 mod error;
 mod keychain;
-#[cfg(feature = "oauth")]
 mod oauth;
 mod profile;
 

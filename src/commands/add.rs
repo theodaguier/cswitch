@@ -6,19 +6,6 @@ use crate::error::{CswitchError, Result};
 use crate::keychain;
 use crate::profile::{Profile, ProfileStore, ProfileType};
 
-#[cfg(feature = "oauth")]
-fn run_oauth(name: &str) -> Result<()> {
-    crate::oauth::run_oauth_flow(name)
-}
-
-#[cfg(not(feature = "oauth"))]
-fn run_oauth(_name: &str) -> Result<()> {
-    eprintln!(
-        "{} OAuth support requires the 'oauth' feature. Rebuild with: cargo build --features oauth",
-        "Error:".red().bold()
-    );
-    Err(CswitchError::Config("OAuth feature not enabled".into()))
-}
 
 pub fn run(name: Option<String>) -> Result<()> {
     let mut store = ProfileStore::load()?;
@@ -37,40 +24,49 @@ pub fn run(name: Option<String>) -> Result<()> {
     }
 
     // 2. Ask for auth type
-    let auth_options = &["API Key", "OAuth"];
+    let auth_options = vec![
+        "API Key",
+        "OAuth (login via browser)",
+        "Import from Claude Code (existing login)",
+    ];
+
     let auth_choice = Select::new()
         .with_prompt("Authentication type")
-        .items(auth_options)
+        .items(&auth_options)
         .default(0)
         .interact()
         .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
 
-    let profile_type = match auth_choice {
-        0 => ProfileType::ApiKey,
-        _ => ProfileType::OAuth,
-    };
+    let selected = auth_options[auth_choice];
 
     // 3. Get credentials
-    match profile_type {
-        ProfileType::ApiKey => {
-            let key = Password::new()
-                .with_prompt("Anthropic API key")
-                .interact()
-                .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
+    let profile_type = if selected == "API Key" {
+        let key = Password::new()
+            .with_prompt("Anthropic API key")
+            .interact()
+            .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
 
-            if !key.starts_with("sk-ant-") {
-                eprintln!(
-                    "{} Key doesn't start with 'sk-ant-'. Storing anyway.",
-                    "Warning:".yellow().bold()
-                );
-            }
+        if !key.starts_with("sk-ant-") {
+            eprintln!(
+                "{} Key doesn't start with 'sk-ant-'. Storing anyway.",
+                "Warning:".yellow().bold()
+            );
+        }
 
-            keychain::set_api_key(&name, &key)?;
-        }
-        ProfileType::OAuth => {
-            run_oauth(&name)?;
-        }
-    }
+        keychain::set_api_key(&name, &key)?;
+        ProfileType::ApiKey
+    } else if selected.starts_with("Import") {
+        let creds = keychain::get_claude_credentials().map_err(|_| {
+            CswitchError::Keychain(
+                "No Claude Code credentials found in Keychain. Log in to Claude Code first.".into(),
+            )
+        })?;
+        keychain::set_oauth_token(&name, &creds)?;
+        ProfileType::OAuth
+    } else {
+        crate::oauth::run_oauth_flow(&name)?;
+        ProfileType::OAuth
+    };
 
     // 4. Ask for optional label
     let label: String = Input::new()
