@@ -42,6 +42,9 @@ pub enum Commands {
     /// Initialize cswitch (create config directory)
     Init,
 
+    /// Update cswitch to the latest version
+    Update,
+
     /// [hidden] Emit the active API key for apiKeyHelper
     #[command(hide = true)]
     EmitKey,

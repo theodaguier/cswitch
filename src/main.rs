@@ -22,6 +22,7 @@ fn main() {
         Commands::Remove { name } => commands::remove::run(name),
         Commands::Import { name } => commands::import::run(name),
         Commands::Init => commands::init::run(),
+        Commands::Update => commands::update::run(),
         Commands::EmitKey => commands::emit_key::run(),
     };
 
