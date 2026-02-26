@@ -37,6 +37,12 @@ With OAuth support:
 cargo install --path . --features oauth
 ```
 
+### One-line install (requires a GitHub release)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/theodaguier/cswitch/main/install.sh | sh
+```
+
 ### Run without installing
 
 ```bash
