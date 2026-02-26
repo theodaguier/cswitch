@@ -1,6 +1,6 @@
 use chrono::Utc;
 use colored::Colorize;
-use dialoguer::Password;
+use dialoguer::{Input, Password, Select};
 
 use crate::error::{CswitchError, Result};
 use crate::keychain;
@@ -20,38 +20,66 @@ fn run_oauth(_name: &str) -> Result<()> {
     Err(CswitchError::Config("OAuth feature not enabled".into()))
 }
 
-pub fn run(name: String, api_key: bool, oauth: bool, label: Option<String>) -> Result<()> {
+pub fn run(name: Option<String>) -> Result<()> {
     let mut store = ProfileStore::load()?;
+
+    // 1. Ask for name
+    let name = match name {
+        Some(n) => n,
+        None => Input::new()
+            .with_prompt("Profile name")
+            .interact_text()
+            .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?,
+    };
 
     if store.profiles.contains_key(&name) {
         return Err(CswitchError::ProfileAlreadyExists(name));
     }
 
-    let profile_type = if api_key {
-        ProfileType::ApiKey
-    } else if oauth {
-        run_oauth(&name)?;
-        ProfileType::OAuth
-    } else {
-        // Default to API key if neither flag is provided
-        ProfileType::ApiKey
+    // 2. Ask for auth type
+    let auth_options = &["API Key", "OAuth"];
+    let auth_choice = Select::new()
+        .with_prompt("Authentication type")
+        .items(auth_options)
+        .default(0)
+        .interact()
+        .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
+
+    let profile_type = match auth_choice {
+        0 => ProfileType::ApiKey,
+        _ => ProfileType::OAuth,
     };
 
-    if profile_type == ProfileType::ApiKey {
-        let key = Password::new()
-            .with_prompt("Anthropic API key")
-            .interact()
-            .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
+    // 3. Get credentials
+    match profile_type {
+        ProfileType::ApiKey => {
+            let key = Password::new()
+                .with_prompt("Anthropic API key")
+                .interact()
+                .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
 
-        if !key.starts_with("sk-ant-") {
-            eprintln!(
-                "{} Key doesn't start with 'sk-ant-'. Storing anyway.",
-                "Warning:".yellow().bold()
-            );
+            if !key.starts_with("sk-ant-") {
+                eprintln!(
+                    "{} Key doesn't start with 'sk-ant-'. Storing anyway.",
+                    "Warning:".yellow().bold()
+                );
+            }
+
+            keychain::set_api_key(&name, &key)?;
         }
-
-        keychain::set_api_key(&name, &key)?;
+        ProfileType::OAuth => {
+            run_oauth(&name)?;
+        }
     }
+
+    // 4. Ask for optional label
+    let label: String = Input::new()
+        .with_prompt("Label (optional)")
+        .allow_empty(true)
+        .interact_text()
+        .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
+
+    let label = if label.is_empty() { None } else { Some(label) };
 
     let profile = Profile {
         name: name.clone(),

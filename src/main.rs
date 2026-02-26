@@ -15,17 +15,12 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Add {
-            name,
-            api_key,
-            oauth,
-            label,
-        } => commands::add::run(name, api_key, oauth, label),
+        Commands::Add { name } => commands::add::run(name),
         Commands::Use { name } => commands::use_profile::run(name),
         Commands::List => commands::list::run(),
         Commands::Current => commands::current::run(),
-        Commands::Remove { name, force } => commands::remove::run(name, force),
-        Commands::Import { name, label } => commands::import::run(name, label),
+        Commands::Remove { name } => commands::remove::run(name),
+        Commands::Import { name } => commands::import::run(name),
         Commands::Init => commands::init::run(),
         Commands::EmitKey => commands::emit_key::run(),
     };

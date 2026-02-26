@@ -9,28 +9,16 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Add a new profile
+    /// Add a new profile (interactive)
     Add {
-        /// Profile name
-        name: String,
-
-        /// Add an API key profile
-        #[arg(long, group = "profile_type")]
-        api_key: bool,
-
-        /// Add an OAuth profile
-        #[arg(long, group = "profile_type")]
-        oauth: bool,
-
-        /// Optional label for this profile
-        #[arg(long, short)]
-        label: Option<String>,
+        /// Profile name (prompted if omitted)
+        name: Option<String>,
     },
 
-    /// Switch to a profile
+    /// Switch to a profile (interactive selector)
     Use {
-        /// Profile name to switch to
-        name: String,
+        /// Profile name (prompted if omitted)
+        name: Option<String>,
     },
 
     /// List all profiles
@@ -41,22 +29,14 @@ pub enum Commands {
 
     /// Remove a profile
     Remove {
-        /// Profile name to remove
-        name: String,
-
-        /// Skip confirmation prompt
-        #[arg(long, short)]
-        force: bool,
+        /// Profile name (prompted if omitted)
+        name: Option<String>,
     },
 
     /// Import existing Claude Code credentials
     Import {
-        /// Profile name to save as
-        name: String,
-
-        /// Optional label
-        #[arg(long, short)]
-        label: Option<String>,
+        /// Profile name to save as (prompted if omitted)
+        name: Option<String>,
     },
 
     /// Initialize cswitch (create config directory)
