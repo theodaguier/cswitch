@@ -1,6 +1,6 @@
 use chrono::Utc;
 use colored::Colorize;
-use dialoguer::{Input, Password, Select};
+use dialoguer::{Confirm, Input, Password, Select};
 
 use crate::error::{CswitchError, Result};
 use crate::keychain;
@@ -19,8 +19,17 @@ pub fn run(name: Option<String>) -> Result<()> {
             .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?,
     };
 
-    if store.profiles.contains_key(&name) {
-        return Err(CswitchError::ProfileAlreadyExists(name));
+    let updating = store.profiles.contains_key(&name);
+    if updating {
+        let confirmed = Confirm::new()
+            .with_prompt(format!("Profile '{name}' already exists. Update credentials?"))
+            .default(true)
+            .interact()
+            .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
+        if !confirmed {
+            println!("Aborted.");
+            return Ok(());
+        }
     }
 
     // 2. Ask for auth type
@@ -68,25 +77,32 @@ pub fn run(name: Option<String>) -> Result<()> {
         ProfileType::OAuth
     };
 
-    // 4. Ask for optional label
-    let label: String = Input::new()
-        .with_prompt("Label (optional)")
-        .allow_empty(true)
-        .interact_text()
-        .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
+    if updating {
+        // Keep existing label and created_at, just update the type
+        if let Some(existing) = store.profiles.get_mut(&name) {
+            existing.profile_type = profile_type;
+        }
+        store.save()?;
+        println!("{} Profile '{}' updated.", "✓".green().bold(), name);
+    } else {
+        let label: String = Input::new()
+            .with_prompt("Label (optional)")
+            .allow_empty(true)
+            .interact_text()
+            .map_err(|e| CswitchError::Config(format!("Input error: {e}")))?;
 
-    let label = if label.is_empty() { None } else { Some(label) };
+        let label = if label.is_empty() { None } else { Some(label) };
 
-    let profile = Profile {
-        name: name.clone(),
-        profile_type,
-        label,
-        created_at: Utc::now(),
-        last_used: None,
-    };
+        let profile = Profile {
+            name: name.clone(),
+            profile_type,
+            label,
+            created_at: Utc::now(),
+            last_used: None,
+        };
 
-    store.add_profile(profile)?;
-
-    println!("{} Profile '{}' added.", "✓".green().bold(), name);
+        store.add_profile(profile)?;
+        println!("{} Profile '{}' added.", "✓".green().bold(), name);
+    }
     Ok(())
 }
