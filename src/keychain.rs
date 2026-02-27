@@ -4,7 +4,12 @@ use crate::error::{CswitchError, Result};
 
 const SERVICE_NAME: &str = "cswitch";
 const CLAUDE_SERVICE: &str = "Claude Code-credentials";
-const CLAUDE_USER: &str = "default";
+
+fn claude_user() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "default".to_string())
+}
 
 fn keychain_error(e: keyring::Error) -> CswitchError {
     CswitchError::Keychain(e.to_string())
@@ -55,13 +60,13 @@ pub fn delete_oauth_token(profile_name: &str) -> Result<()> {
 
 /// Read the current Claude Code credentials from the Keychain.
 pub fn get_claude_credentials() -> Result<String> {
-    let entry = Entry::new(CLAUDE_SERVICE, CLAUDE_USER).map_err(keychain_error)?;
+    let entry = Entry::new(CLAUDE_SERVICE, &claude_user()).map_err(keychain_error)?;
     entry.get_password().map_err(keychain_error)
 }
 
 /// Write OAuth credentials to the Claude Code Keychain entry.
 pub fn set_claude_credentials(token_json: &str) -> Result<()> {
-    let entry = Entry::new(CLAUDE_SERVICE, CLAUDE_USER).map_err(keychain_error)?;
+    let entry = Entry::new(CLAUDE_SERVICE, &claude_user()).map_err(keychain_error)?;
     entry.set_password(token_json).map_err(keychain_error)?;
     Ok(())
 }
