@@ -1,4 +1,4 @@
-// Login to Claude by delegating to `claude` CLI.
+// Login to Claude by delegating to `claude auth login`.
 
 use colored::Colorize;
 use std::process::Command;
@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::error::{CswitchError, Result};
 use crate::keychain;
 
-/// Run `claude login` then capture the credentials from the Keychain.
+/// Run `claude auth login` then capture the credentials from the Keychain.
 pub fn run_oauth_flow(profile_name: &str) -> Result<()> {
     // Check that `claude` is installed
     let has_claude = Command::new("claude")
@@ -21,17 +21,17 @@ pub fn run_oauth_flow(profile_name: &str) -> Result<()> {
     }
 
     println!(
-        "{} Running 'claude login'...",
+        "{} Running 'claude auth login'...",
         "→".blue().bold()
     );
 
     let status = Command::new("claude")
-        .arg("login")
+        .args(["auth", "login"])
         .status()
-        .map_err(|e| CswitchError::OAuth(format!("Failed to run 'claude login': {e}")))?;
+        .map_err(|e| CswitchError::OAuth(format!("Failed to run 'claude auth login': {e}")))?;
 
     if !status.success() {
-        return Err(CswitchError::OAuth("'claude login' failed".into()));
+        return Err(CswitchError::OAuth("'claude auth login' failed".into()));
     }
 
     // Grab the fresh credentials from the Keychain
