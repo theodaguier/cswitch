@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::error::{CswitchError, Result};
 
-const CLAUDE_CREDENTIALS_FILE: &str = ".credentials.json";
+const CLAUDE_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct CredentialStore {
@@ -44,10 +44,10 @@ fn save_store(store: &CredentialStore) -> Result<()> {
     Ok(())
 }
 
-fn claude_credentials_path() -> Result<PathBuf> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| CswitchError::Keychain("Cannot determine home directory".into()))?;
-    Ok(home.join(".claude").join(CLAUDE_CREDENTIALS_FILE))
+fn claude_user() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "default".to_string())
 }
 
 // --- API keys ---
@@ -90,21 +90,36 @@ pub fn delete_oauth_token(profile_name: &str) -> Result<()> {
     save_store(&store)
 }
 
-// --- Claude Code credentials (read/write ~/.claude/.credentials.json) ---
+// --- Claude Code credentials (via macOS `security` CLI, no dialog) ---
 
 pub fn get_claude_credentials() -> Result<String> {
-    let path = claude_credentials_path()?;
-    fs::read_to_string(&path)
-        .map_err(|_| CswitchError::Keychain("No Claude Code credentials found at ~/.claude/.credentials.json".into()))
+    let output = std::process::Command::new("security")
+        .args(["find-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-a", &claude_user(), "-w"])
+        .output()
+        .map_err(|e| CswitchError::Keychain(format!("Failed to run security: {e}")))?;
+
+    if !output.status.success() {
+        return Err(CswitchError::Keychain("No Claude Code credentials found in Keychain".into()));
+    }
+
+    String::from_utf8(output.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| CswitchError::Keychain(format!("Invalid credentials encoding: {e}")))
 }
 
 pub fn set_claude_credentials(token_json: &str) -> Result<()> {
-    let path = claude_credentials_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+    // Delete existing entry first (security add fails if it exists)
+    let _ = std::process::Command::new("security")
+        .args(["delete-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-a", &claude_user()])
+        .output();
+
+    let status = std::process::Command::new("security")
+        .args(["add-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-a", &claude_user(), "-w", token_json, "-U"])
+        .status()
+        .map_err(|e| CswitchError::Keychain(format!("Failed to run security: {e}")))?;
+
+    if !status.success() {
+        return Err(CswitchError::Keychain("Failed to write credentials to Keychain".into()));
     }
-    fs::write(&path, token_json)
-        .map_err(|e| CswitchError::Keychain(format!("Failed to write Claude credentials: {e}")))?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
