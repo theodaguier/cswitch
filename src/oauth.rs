@@ -25,8 +25,8 @@ pub fn run_oauth_flow(profile_name: &str) -> Result<()> {
         "→".blue().bold()
     );
 
-    let status = Command::new("claude")
-        .args(["auth", "login"])
+    let status = Command::new("script")
+        .args(["-q", "/dev/null", "claude", "auth", "login"])
         .status()
         .map_err(|e| CswitchError::OAuth(format!("Failed to run 'claude auth login': {e}")))?;
 

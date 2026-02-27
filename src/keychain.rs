@@ -1,72 +1,110 @@
-use keyring::Entry;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 use crate::error::{CswitchError, Result};
 
-const SERVICE_NAME: &str = "cswitch";
-const CLAUDE_SERVICE: &str = "Claude Code-credentials";
+const CLAUDE_CREDENTIALS_FILE: &str = ".credentials.json";
 
-fn claude_user() -> String {
-    std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "default".to_string())
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct CredentialStore {
+    api_keys: HashMap<String, String>,
+    oauth_tokens: HashMap<String, String>,
 }
 
-fn keychain_error(e: keyring::Error) -> CswitchError {
-    CswitchError::Keychain(e.to_string())
+fn credentials_path() -> Result<PathBuf> {
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| CswitchError::Keychain("Cannot determine config directory".into()))?;
+    Ok(config_dir.join("cswitch").join("credentials.json"))
 }
 
-/// Store an API key for a profile in the OS keychain.
+fn load_store() -> Result<CredentialStore> {
+    let path = credentials_path()?;
+    if !path.exists() {
+        return Ok(CredentialStore::default());
+    }
+    let data = fs::read_to_string(&path)
+        .map_err(|e| CswitchError::Keychain(format!("Failed to read credentials: {e}")))?;
+    serde_json::from_str(&data).map_err(|e| CswitchError::Keychain(format!("Invalid credentials file: {e}")))
+}
+
+fn save_store(store: &CredentialStore) -> Result<()> {
+    let path = credentials_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let data = serde_json::to_string_pretty(store)
+        .map_err(|e| CswitchError::Keychain(format!("Failed to serialize credentials: {e}")))?;
+    fs::write(&path, &data)
+        .map_err(|e| CswitchError::Keychain(format!("Failed to write credentials: {e}")))?;
+    // Restrict permissions to owner only (600)
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+fn claude_credentials_path() -> Result<PathBuf> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| CswitchError::Keychain("Cannot determine home directory".into()))?;
+    Ok(home.join(".claude").join(CLAUDE_CREDENTIALS_FILE))
+}
+
+// --- API keys ---
+
 pub fn set_api_key(profile_name: &str, api_key: &str) -> Result<()> {
-    let entry = Entry::new(SERVICE_NAME, profile_name).map_err(keychain_error)?;
-    entry.set_password(api_key).map_err(keychain_error)?;
-    Ok(())
+    let mut store = load_store()?;
+    store.api_keys.insert(profile_name.to_string(), api_key.to_string());
+    save_store(&store)
 }
 
-/// Retrieve an API key for a profile from the OS keychain.
 pub fn get_api_key(profile_name: &str) -> Result<String> {
-    let entry = Entry::new(SERVICE_NAME, profile_name).map_err(keychain_error)?;
-    entry.get_password().map_err(keychain_error)
+    let store = load_store()?;
+    store.api_keys.get(profile_name).cloned()
+        .ok_or_else(|| CswitchError::Keychain(format!("No API key found for profile '{profile_name}'")))
 }
 
-/// Delete an API key for a profile from the OS keychain.
 pub fn delete_api_key(profile_name: &str) -> Result<()> {
-    let entry = Entry::new(SERVICE_NAME, profile_name).map_err(keychain_error)?;
-    entry.delete_credential().map_err(keychain_error)?;
-    Ok(())
+    let mut store = load_store()?;
+    store.api_keys.remove(profile_name);
+    save_store(&store)
 }
 
-/// Store an OAuth token JSON for a profile in the OS keychain.
+// --- OAuth tokens ---
+
 pub fn set_oauth_token(profile_name: &str, token_json: &str) -> Result<()> {
-    let key = format!("{}-oauth", profile_name);
-    let entry = Entry::new(SERVICE_NAME, &key).map_err(keychain_error)?;
-    entry.set_password(token_json).map_err(keychain_error)?;
-    Ok(())
+    let mut store = load_store()?;
+    store.oauth_tokens.insert(profile_name.to_string(), token_json.to_string());
+    save_store(&store)
 }
 
-/// Retrieve an OAuth token JSON for a profile from the OS keychain.
 pub fn get_oauth_token(profile_name: &str) -> Result<String> {
-    let key = format!("{}-oauth", profile_name);
-    let entry = Entry::new(SERVICE_NAME, &key).map_err(keychain_error)?;
-    entry.get_password().map_err(keychain_error)
+    let store = load_store()?;
+    store.oauth_tokens.get(profile_name).cloned()
+        .ok_or_else(|| CswitchError::Keychain(format!("No OAuth token found for profile '{profile_name}'")))
 }
 
-/// Delete an OAuth token for a profile from the OS keychain.
 pub fn delete_oauth_token(profile_name: &str) -> Result<()> {
-    let key = format!("{}-oauth", profile_name);
-    let entry = Entry::new(SERVICE_NAME, &key).map_err(keychain_error)?;
-    entry.delete_credential().map_err(keychain_error)?;
-    Ok(())
+    let mut store = load_store()?;
+    store.oauth_tokens.remove(profile_name);
+    save_store(&store)
 }
 
-/// Read the current Claude Code credentials from the Keychain.
+// --- Claude Code credentials (read/write ~/.claude/.credentials.json) ---
+
 pub fn get_claude_credentials() -> Result<String> {
-    let entry = Entry::new(CLAUDE_SERVICE, &claude_user()).map_err(keychain_error)?;
-    entry.get_password().map_err(keychain_error)
+    let path = claude_credentials_path()?;
+    fs::read_to_string(&path)
+        .map_err(|_| CswitchError::Keychain("No Claude Code credentials found at ~/.claude/.credentials.json".into()))
 }
 
-/// Write OAuth credentials to the Claude Code Keychain entry.
 pub fn set_claude_credentials(token_json: &str) -> Result<()> {
-    let entry = Entry::new(CLAUDE_SERVICE, &claude_user()).map_err(keychain_error)?;
-    entry.set_password(token_json).map_err(keychain_error)?;
+    let path = claude_credentials_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&path, token_json)
+        .map_err(|e| CswitchError::Keychain(format!("Failed to write Claude credentials: {e}")))?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
