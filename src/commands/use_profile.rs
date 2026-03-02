@@ -66,7 +66,7 @@ pub fn run(name: Option<String>) -> Result<()> {
             claude_config::enable_api_key_helper()?;
         }
         ProfileType::OAuth => {
-            let token = keychain::get_oauth_token(&name)?;
+            let token = keychain::refresh_oauth_token_if_needed(&name)?;
             keychain::set_claude_credentials(&token)?;
             claude_config::disable_api_key_helper()?;
         }
